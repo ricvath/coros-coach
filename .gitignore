@@ -5,6 +5,9 @@
 node_modules
 dist
 
+# credentials
 coros.config.json
+
+# local artifacts
 *.txt
 *.zip

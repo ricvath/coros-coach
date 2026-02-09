@@ -144,3 +144,88 @@ export type STSConfig = {
   bucket: string;
   service: 'aws' | 'aliyun';
 };
+
+// EvoLab analyse types
+
+export interface AnalyseTiredRateZone {
+  max?: number;
+  min: number;
+  type: number;
+}
+
+export interface AnalyseTrainingLoadRatioZone {
+  max?: number;
+  min: number;
+  type: number;
+}
+
+export interface AnalyseDayData {
+  ati: number;
+  avgSleepHrv?: number;
+  ct7dMaxFixed: number;
+  ct7dMin: number;
+  cti: number;
+  distance: number;
+  distanceTarget: number;
+  duration: number;
+  durationTarget: number;
+  // YYYYMMDD as a number
+  happenDay: number;
+  performance: number;
+  recomendTlMax: number;
+  recomendTlMin: number;
+  rhr?: number;
+  sleepHrvBase?: number;
+  sleepHrvIntervalList?: number[];
+  t28d: number;
+  t7d: number;
+  testRhr?: number;
+  tib: number;
+  timestamp: number;
+  tiredRate: number;
+  tiredRateNew: number;
+  tiredRateNewZoneList: AnalyseTiredRateZone[];
+  tiredRateStateNew: number;
+  trainingLoad: number;
+  trainingLoadRatio: number;
+  trainingLoadRatioState: number;
+  trainingLoadRatioZoneList: AnalyseTrainingLoadRatioZone[];
+  trainingLoadTarget: number;
+}
+
+export interface AnalyseSportStatistic {
+  avgHeartRate: number;
+  avgPace?: number;
+  count: number;
+  distance: number;
+  duration: number;
+  sportType: number;
+  trainingLoad: number;
+}
+
+export interface AnalyseWeekData {
+  firstDayOfWeek: number;
+  recomendTlMax: number;
+  recomendTlMin: number;
+  trainingLoad: number;
+}
+
+export interface AnalyseData {
+  dayList: AnalyseDayData[];
+  record: unknown;
+  sportDataSummary: {
+    count: number;
+    modelValidState: boolean;
+    userFirstViewTimestamp: number;
+  };
+  sportStatistic: AnalyseSportStatistic[];
+  summaryInfo: unknown;
+  t7dayList: AnalyseDayData[];
+  tlIntensity: unknown;
+  trainingWeekStageList: unknown[];
+  weekList: AnalyseWeekData[];
+}
+
+export type AnalyseResponse = {
+  data: AnalyseData;
+} & CorosCommonResponse;

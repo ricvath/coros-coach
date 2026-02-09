@@ -10,6 +10,7 @@ import {
   ActivityDownloadResponse,
   ActivityResponse,
   ActivityUploadResponse,
+  AnalyseResponse,
   BucketCredentialsResponse,
   BucketDataResponse,
   CorosCommonResponse,
@@ -40,6 +41,7 @@ const TOKEN_FILE = 'token.txt';
 export default class CorosApi {
   private _credentials: CorosCredentials;
   private _accessToken?: string;
+  private _userId?: string;
 
   private _apiUrl: string = API_URL;
   private _faqApiUrl: string = FAQ_API_URL;
@@ -128,6 +130,7 @@ export default class CorosApi {
     if (response.result === '0000') {
       const { accessToken, ...rest } = response.data;
       this._accessToken = accessToken;
+      this._userId = rest.userId;
       return rest;
     }
     throw new Error(response.message);
@@ -146,6 +149,7 @@ export default class CorosApi {
       })
       .json();
 
+    this._userId = response.data.userId;
     return response.data;
   }
 
@@ -329,6 +333,26 @@ export default class CorosApi {
         baseURL: this._apiUrl,
       })
       .then((res) => res.data);
+  }
+
+  public async getEvoLabData(): Promise<AnalyseResponse['data']> {
+    if (!this._accessToken) {
+      throw new Error('Not logged in');
+    }
+    if (!this._userId) {
+      throw new Error('userId not available. Call login() or getAccount() first');
+    }
+    const response = await ky
+      .get<AnalyseResponse>('analyse/query', {
+        prefixUrl: this._apiUrl,
+        headers: {
+          accesstoken: this._accessToken,
+          yfheader: JSON.stringify({ userId: this._userId }),
+        },
+      })
+      .json();
+
+    return response.data;
   }
 
   public deleteActivity(activityId: string) {
