@@ -9,12 +9,16 @@
  *   2. npm install
  *   3. node coach-fetch.mjs
  */
-import { CorosApi, STSConfigs, isDirectory } from 'coros-connect';
-import { readFileSync } from 'fs';
+import { CorosApi, STSConfigs } from 'coros-connect';
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs';
+import { createHash } from 'crypto';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const BASE = 'https://teamapi.coros.com';
+const TOKEN_FILE = join(__dirname, '.coros-token', 'token.txt');
+const TOKEN_DIR = join(__dirname, '.coros-token');
 
 // Load credentials from coros.config.json (gitignored — never commit credentials)
 let EMAIL, PASS;
@@ -26,8 +30,6 @@ try {
   console.error('❌ Missing coros.config.json — copy coros.config.json.example and fill in your credentials.');
   process.exit(1);
 }
-
-const TOKEN_FOLDER = join(__dirname, '.coros-token');
 
 const SPORT_LABELS = {
   100: 'Outdoor Run', 101: 'Indoor Run', 102: 'Trail Run',
@@ -44,7 +46,6 @@ function paceStr(seconds) {
   const s = String(seconds % 60).padStart(2, '0');
   return `${m}:${s}/km`;
 }
-
 function distKm(m) { return (m / 1000).toFixed(2) + 'km'; }
 function durStr(s) {
   const h = Math.floor(s / 3600);
@@ -52,42 +53,81 @@ function durStr(s) {
   return h > 0 ? `${h}h${String(m).padStart(2, '0')}m` : `${m}m`;
 }
 
-async function run() {
-  const coros = new CorosApi({ email: EMAIL, password: PASS });
-  coros.config({ stsConfig: STSConfigs.EU });
+async function api(path, token, opts = {}) {
+  const { method = 'GET', params, body, extraHeaders = {} } = opts;
+  let url = `${BASE}/${path}`;
+  if (params) url += '?' + new URLSearchParams(params).toString();
+  const res = await fetch(url, {
+    method,
+    headers: {
+      accessToken: token,
+      'Content-Type': 'application/json',
+      ...extraHeaders,
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  return res.json();
+}
 
-  // Reuse stored token if available (avoids 429s from frequent logins)
-  try {
-    if (isDirectory && isDirectory(TOKEN_FOLDER)) {
-      coros.loadTokenByFile(TOKEN_FOLDER);
+async function login() {
+  const pwd = createHash('md5').update(PASS).digest('hex');
+  const res = await fetch(`${BASE}/account/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account: EMAIL, accountType: 2, pwd }),
+  });
+  const j = await res.json();
+  if (j.result !== '0000') throw new Error('Login failed: ' + j.message);
+  return j.data; // { accessToken, userId, nickname, ... }
+}
+
+async function run() {
+  // Token management — reuse if valid, refresh on 1019
+  let token, profile;
+
+  if (existsSync(TOKEN_FILE)) {
+    token = readFileSync(TOKEN_FILE, 'utf8').trim();
+    // Verify token is still valid
+    const check = await api('account/query', token);
+    if (check.result === '0000') {
+      profile = check.data;
     } else {
-      await coros.login(EMAIL, PASS);
-      coros.exportTokenToFile(TOKEN_FOLDER);
+      // Token expired — re-login
+      profile = await login();
+      token = profile.accessToken;
+      mkdirSync(TOKEN_DIR, { recursive: true });
+      writeFileSync(TOKEN_FILE, token);
     }
-  } catch {
-    await coros.login(EMAIL, PASS);
+  } else {
+    profile = await login();
+    token = profile.accessToken;
+    mkdirSync(TOKEN_DIR, { recursive: true });
+    writeFileSync(TOKEN_FILE, token);
   }
 
-  const profile = await coros.getAccount();
-  const [activities, evoLab] = await Promise.all([
-    coros.getActivitiesList({ size: 20, page: 1 }),
-    coros.getEvoLabData().catch(() => null),
+  const userId = profile.userId;
+
+  // Fetch activities and EvoLab in parallel
+  const [activitiesRes, evoLabRes] = await Promise.all([
+    api('activity/query', token, { params: { size: 20, pageNumber: 1 } }),
+    fetch(`${BASE}/analyse/query`, {
+      headers: { accesstoken: token, yfheader: JSON.stringify({ userId }) },
+    }).then(r => r.json()).catch(() => null),
   ]);
 
-  const list = activities.dataList || [];
+  const list = activitiesRes.data?.dataList || [];
+  const evoLab = evoLabRes?.data ?? null;
 
   // Categorize last 7 days
   const now = Date.now() / 1000;
   const week = list.filter(a => (now - a.startTime) < 7 * 86400);
   const runs = list.filter(a => [100, 101, 102].includes(a.sportType));
   const recentRuns = runs.slice(0, 5);
-
-  // Training load sum last 7 days
   const weekLoad = week.reduce((sum, a) => sum + (a.trainingLoad || 0), 0);
 
-  // EvoLab health metrics — get the most recent day entries with data
+  // EvoLab health metrics
   const dayList = evoLab?.dayList || [];
-  const recentDays = dayList.slice(-14); // last 14 days of EvoLab data
+  const recentDays = dayList.slice(-14);
   const latestWithHrv = [...dayList].reverse().find(d => d.avgSleepHrv);
   const latestWithVo2 = [...dayList].reverse().find(d => d.vo2max);
   const latestWithStamina = [...dayList].reverse().find(d => d.staminaLevel);
@@ -96,8 +136,8 @@ async function run() {
   console.log(`Date: ${new Date().toISOString().split('T')[0]}`);
   console.log(`Athlete: ${profile.nickname} | ${profile.stature}cm | ${profile.weight?.toFixed(1)}kg`);
   console.log(`Max HR: ${profile.maxHr} | RHR: ${profile.rhr}`);
-  console.log(`\n--- LAST 7 DAYS (${week.length} activities, load: ${weekLoad}) ---`);
 
+  console.log(`\n--- LAST 7 DAYS (${week.length} activities, load: ${weekLoad}) ---`);
   week.forEach(a => {
     const label = SPORT_LABELS[a.sportType] || `Sport${a.sportType}`;
     const pace = [100, 101, 102].includes(a.sportType) ? ` @ ${paceStr(a.adjustedPace || a.avg5x10s)}` : '';
@@ -106,67 +146,50 @@ async function run() {
 
   console.log(`\n--- RECENT RUNS (last 5) ---`);
   if (recentRuns.length === 0) {
-    console.log('  No runs found in recent activities. ⚠️ Running frequency is low.');
+    console.log('  No runs found. ⚠️ Running frequency is low.');
   } else {
     for (const a of recentRuns) {
       console.log(`  [${a.date}] ${distKm(a.distance)} in ${durStr(a.totalTime)} | pace ${paceStr(a.avg5x10s)} | HR ${a.avgHr} | load ${a.trainingLoad}`);
-
-      // Fetch lap/split details for each run
       try {
-        const detail = await coros.getActivityDetails(a.labelId);
-        const laps = detail?.lapList?.[0]?.lapItemList || [];
+        const detail = await api('activity/detail/query', token, {
+          method: 'POST',
+          params: { labelId: a.labelId, sportType: a.sportType },
+        });
+        const laps = detail.data?.lapList?.[0]?.lapItemList || [];
         if (laps.length > 1) {
-          const intervals = laps.filter(l => l.mode === 2);   // interval reps
-          // mode=3: recovery, mode=4: warmup/cooldown
-
+          const intervals = laps.filter(l => l.mode === 2);
           if (intervals.length > 0) {
             console.log(`    ⚡ INTERVAL BREAKDOWN (${intervals.length} reps):`);
             intervals.forEach((l, i) => {
-              // lap distance is in cm when >= 10000 (i.e. >= 100m stored as cm)
               const repDist = l.distance >= 10000 ? distKm(l.distance / 100) : distKm(l.distance);
               console.log(`      Rep ${i + 1}: pace ${paceStr(l.adjustedPace)} | HR avg ${l.avgHr} / max ${l.maxHr} | cadence ${l.avgCadence} | dist ${repDist}`);
             });
           } else {
-            // Regular km splits
             console.log(`    📏 KM SPLITS (${laps.length} laps):`);
             laps.forEach((l, i) => {
               console.log(`      Lap ${i + 1}: pace ${paceStr(l.adjustedPace)} | HR avg ${l.avgHr} / max ${l.maxHr} | cadence ${l.avgCadence}`);
             });
           }
         }
-      } catch {
-        // silently skip if detail fetch fails (token expiry, rate limit, etc.)
-      }
+      } catch { /* skip if detail fetch fails */ }
     }
   }
 
-  // Health metrics from EvoLab
   if (latestWithHrv || latestWithVo2 || latestWithStamina) {
     console.log(`\n--- HEALTH METRICS (EvoLab) ---`);
-    if (latestWithVo2) {
-      console.log(`  VO2max: ${latestWithVo2.vo2max} ml/kg/min (as of ${latestWithVo2.happenDay})`);
-    }
-    if (latestWithStamina) {
-      console.log(`  Aerobic Stamina: ${latestWithStamina.staminaLevel} | 7d target: ${latestWithStamina.staminaLevel7d}%`);
-    }
+    if (latestWithVo2) console.log(`  VO2max: ${latestWithVo2.vo2max} ml/kg/min (as of ${latestWithVo2.happenDay})`);
+    if (latestWithStamina) console.log(`  Aerobic Stamina: ${latestWithStamina.staminaLevel} | 7d target: ${latestWithStamina.staminaLevel7d}%`);
     if (latestWithHrv) {
       const hrv = latestWithHrv;
-      const status = hrv.avgSleepHrv >= hrv.sleepHrvBase
-        ? '✅ above baseline'
-        : hrv.avgSleepHrv >= hrv.sleepHrvBase * 0.9
-          ? '⚠️ slightly below baseline'
-          : '🔴 well below baseline';
+      const status = hrv.avgSleepHrv >= hrv.sleepHrvBase ? '✅ above baseline'
+        : hrv.avgSleepHrv >= hrv.sleepHrvBase * 0.9 ? '⚠️ slightly below baseline'
+        : '🔴 well below baseline';
       console.log(`  Sleep HRV: ${hrv.avgSleepHrv}ms avg | baseline: ${hrv.sleepHrvBase}ms → ${status}`);
     }
-
-    // HRV trend over last 7 days
     const recentHrv = recentDays.filter(d => d.avgSleepHrv && d.tib > 0);
     if (recentHrv.length >= 3) {
-      console.log(`  HRV trend (${recentHrv.length} nights): ` +
-        recentHrv.map(d => `${d.happenDay}: ${d.avgSleepHrv}ms`).join(' | '));
+      console.log(`  HRV trend (${recentHrv.length} nights): ` + recentHrv.map(d => `${d.happenDay}: ${d.avgSleepHrv}ms`).join(' | '));
     }
-
-    // RHR trend
     const recentRhr = recentDays.filter(d => d.rhr > 0);
     if (recentRhr.length) {
       const avgRhr = Math.round(recentRhr.reduce((s, d) => s + d.rhr, 0) / recentRhr.length);
@@ -181,10 +204,8 @@ async function run() {
     console.log(`  FTP (cycling): ${zones.ftp}W`);
   }
 
-  // Coaching analysis
   console.log(`\n--- COACHING NOTES ---`);
   const runCount7d = week.filter(a => [100, 101, 102].includes(a.sportType)).length;
-
   if (runCount7d === 0) {
     console.log('  ⚠️ ZERO runs this week. VO2max improvement requires running stimulus. Target: 3-4 runs/week minimum.');
   } else if (runCount7d < 3) {
@@ -192,7 +213,6 @@ async function run() {
   } else {
     console.log(`  ✅ ${runCount7d} runs this week — good frequency.`);
   }
-
   if (weekLoad < 100) {
     console.log('  ⚠️ Training load is low. Consider adding aerobic volume (easy Zone 2 runs).');
   } else if (weekLoad > 400) {
@@ -200,8 +220,6 @@ async function run() {
   } else {
     console.log(`  ✅ Training load in healthy range (${weekLoad}).`);
   }
-
-  // HRV-based readiness note
   if (latestWithHrv) {
     const hrv = latestWithHrv;
     if (hrv.avgSleepHrv < hrv.sleepHrvBase * 0.9) {
@@ -210,16 +228,11 @@ async function run() {
       console.log(`  ✅ HRV above baseline — body is ready for quality training.`);
     }
   }
-
-  // VO2max from COROS (watch measurement) or LT pace estimate
   if (latestWithVo2) {
     console.log(`  📊 VO2max: ${latestWithVo2.vo2max} ml/kg/min (COROS estimate, last updated ${latestWithVo2.happenDay})`);
-  } else {
-    const ltsp = zones?.ltsp;
-    if (ltsp) {
-      const speedMS = 1000 / ltsp;
-      console.log(`  📊 LT pace ${paceStr(ltsp)} → estimated VO2max ~${(speedMS * 3.5 * 60 / 1000 * 100).toFixed(0)} (approximation — do a fitness test for accuracy)`);
-    }
+  } else if (zones?.ltsp) {
+    const speedMS = 1000 / zones.ltsp;
+    console.log(`  📊 LT pace ${paceStr(zones.ltsp)} → estimated VO2max ~${(speedMS * 3.5 * 60 / 1000 * 100).toFixed(0)} (approximation)`);
   }
 
   return { profile, week, recentRuns, weekLoad };
