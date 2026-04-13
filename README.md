@@ -2,6 +2,28 @@
 
 A Node.js toolkit for pulling your COROS training data and using it with an AI agent — for coaching summaries, training load analysis, lap/split breakdowns, and proactive nudges.
 
+---
+
+## Before you start — requirements
+
+### 1. 🏃 A COROS smartwatch
+
+You need an active COROS account with training data synced to it. If you don't own one yet, the [Pace 3](https://www.coros.com/pace3), [Pace 4](https://www.coros.com/pace4), and [Pace Pro](https://www.coros.com/pacepro) are the best value options for runners.
+
+### 2. 🤖 OpenClaw installed
+
+This toolkit is designed to be used with an OpenClaw AI agent. If you haven't set that up yet — **[do that first](https://github.com/openclaw/openclaw)**. Everything below assumes you have a working OpenClaw agent.
+
+### 3. ✨ Let your agent set it up for you
+
+Once OpenClaw is running, the easiest way to get started is to paste this into your agent:
+
+> *"Set up the coros-coach skill from https://github.com/ricvath/coros-api-mcp — clone the repo, install it, add my credentials, wire up the heartbeat, and run a test coaching report."*
+
+Your agent will handle the rest.
+
+---
+
 > ⚠️ This uses the **non-public COROS API** (reverse-engineered from the [COROS Training Hub](https://t.coros.com/) web app). It could break at any time if COROS changes their backend. Use accordingly.
 
 Built on top of the excellent [coros-connect](https://github.com/jmn8718/coros-connect) library.
