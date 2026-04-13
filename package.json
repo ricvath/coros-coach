@@ -1,7 +1,7 @@
 {
-  "name": "coros-connect",
-  "version": "0.1.4",
-  "description": "Interface to connect with Coros API",
+  "name": "coros-coach",
+  "version": "1.0.0",
+  "description": "AI coaching layer for COROS smartwatches — training data, HRV, VO2max, lap splits, and coaching nudges",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,48 +16,15 @@
         "default": "./dist/index.cjs"
       },
       "default": "./dist/index.mjs"
-    },
-    "./dist/*": {
-      "types": "./dist/*.d.ts",
-      "import": "./dist/*.mjs",
-      "require": "./dist/*.cjs"
     }
   },
-  "scripts": {
-    "build": "find ./dist -type d -empty -delete; tsup",
-    "example": "tsx example/index.ts",
-    "format:check": "biome format src",
-    "format:fix": "biome format --write src",
-    "prepare": "npm run build"
-  },
-  "keywords": [
-    "coros",
-    "typescript",
-    "running"
-  ],
-  "author": "Jose Miguel <jmn8718@gmail.com>",
+  "keywords": ["coros", "running", "triathlon", "coaching", "hrv", "training"],
+  "author": "ricvath",
   "license": "MIT",
-  "homepage": "https://github.com/jmn8718/coros-connect#readme",
-  "bugs": {
-    "url": "https://github.com/jmn8718/coros-connect/issues"
-  },
-  "files": [
-    "dist/*",
-    "examples/*"
-  ],
+  "homepage": "https://github.com/ricvath/coros-coach#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jmn8718/coros-connect.git"
-  },
-  "publishConfig": {
-    "@jmn8718:registry": "https://npm.pkg.github.com"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "1.9.4",
-    "@types/node": "22.10.0",
-    "tsup": "^8.4.0",
-    "tsx": "^4.19.3",
-    "typescript": "5.7.2"
+    "url": "git+https://github.com/ricvath/coros-coach.git"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.750.0",

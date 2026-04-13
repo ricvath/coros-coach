@@ -1,4 +1,4 @@
-# MAC
+# macOS
 .DS_Store
 
 # node
@@ -12,6 +12,3 @@ coros.config.json
 # local artifacts
 *.txt
 *.zip
-
-# planning / session notes (local only)
-.planning/
