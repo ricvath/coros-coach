@@ -161,6 +161,7 @@ export interface AnalyseTrainingLoadRatioZone {
 
 export interface AnalyseDayData {
   ati: number;
+  /** Average overnight HRV reading (ms). Only present on days with sleep tracking. */
   avgSleepHrv?: number;
   ct7dMaxFixed: number;
   ct7dMin: number;
@@ -171,15 +172,30 @@ export interface AnalyseDayData {
   durationTarget: number;
   // YYYYMMDD as a number
   happenDay: number;
+  /** Lactate threshold heart rate (bpm). Present on days where a fitness test occurred. */
+  lthr?: number;
+  /** Lactate threshold pace (seconds/km). Present alongside lthr. */
+  ltsp?: number;
   performance: number;
   recomendTlMax: number;
   recomendTlMin: number;
+  /** Resting heart rate (bpm). */
   rhr?: number;
+  /** 30-day rolling HRV baseline (ms). */
   sleepHrvBase?: number;
+  /**
+   * HRV zone boundary list: [low_threshold, mid_threshold, high_threshold, max_reading]
+   * Use sleepHrvBase and avgSleepHrv relative to these to determine HRV status.
+   */
   sleepHrvIntervalList?: number[];
+  /** Aerobic stamina score (0–100). Higher = more aerobic base built up. */
+  staminaLevel?: number;
+  /** 7-day stamina score (% of target). */
+  staminaLevel7d?: number;
   t28d: number;
   t7d: number;
   testRhr?: number;
+  /** Time in bed (hours). Negative values = data anomaly / timezone artefact; treat as 0. */
   tib: number;
   timestamp: number;
   tiredRate: number;
@@ -191,6 +207,8 @@ export interface AnalyseDayData {
   trainingLoadRatioState: number;
   trainingLoadRatioZoneList: AnalyseTrainingLoadRatioZone[];
   trainingLoadTarget: number;
+  /** VO2max estimate (ml/kg/min) as calculated by COROS. Only present on certain days. */
+  vo2max?: number;
 }
 
 export interface AnalyseSportStatistic {

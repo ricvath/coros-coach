@@ -65,6 +65,13 @@ Max HR: 194 | RHR: 49
       Rep 1: pace 4:55/km | HR avg 168 / max 178 | cadence 182 | dist 1.00km
       ...
 
+--- HEALTH METRICS (EvoLab) ---
+  VO2max: 49 ml/kg/min (as of 20260412)
+  Aerobic Stamina: 75.4 | 7d target: 98%
+  Sleep HRV: 46ms avg | baseline: 47ms → ⚠️ slightly below baseline
+  HRV trend (4 nights): 20260409: 45ms | 20260410: 43ms | 20260411: 44ms | 20260412: 46ms
+  RHR avg (7 days): 49bpm
+
 --- ZONES ---
   LTHR: 171 | LT pace: 5:01/km
   FTP (cycling): 180W
@@ -72,20 +79,45 @@ Max HR: 194 | RHR: 49
 --- COACHING NOTES ---
   ⚠️ Only 2 run(s) this week. Aim for 3-4 to drive VO2max adaptations.
   ✅ Training load in healthy range (287).
-  📊 LT pace 5:01/km → estimated VO2max ~47
+  ✅ HRV above baseline — body is ready for quality training.
+  📊 VO2max: 49 ml/kg/min (COROS estimate, last updated 20260412)
 ```
 
 ---
 
-## EvoLab data (training load, HRV, fatigue)
+## EvoLab data (HRV, VO2max, training load, fatigue, stamina)
 
-This repo also includes a reverse-engineered `/analyse/query` endpoint that exposes COROS's EvoLab metrics — data not available through the standard activity list:
+This repo includes a reverse-engineered `/analyse/query` endpoint that exposes COROS's EvoLab metrics — rich health and readiness data not available in the standard activity list.
 
-- Daily training load, fatigue rate, workload ratio
-- Resting heart rate trends
-- Sleep HRV and HRV baseline
-- Sport-by-sport weekly breakdowns
-- Recommended weekly load ranges
+### What's in there (per day, ~84 days of history)
+
+| Field | Description |
+|---|---|
+| `rhr` | Resting heart rate (bpm) |
+| `tib` | Time in bed (hours; negative = data anomaly, treat as 0) |
+| `avgSleepHrv` | Average overnight HRV (ms) |
+| `sleepHrvBase` | 30-day rolling HRV baseline (ms) |
+| `sleepHrvIntervalList` | HRV zone boundaries `[low, mid, high, max]` |
+| `vo2max` | VO2max estimate (ml/kg/min) — present on fitness test days |
+| `staminaLevel` | Aerobic stamina score (0–100) |
+| `staminaLevel7d` | 7-day stamina vs target (%) |
+| `trainingLoad` | Daily training load |
+| `tiredRateNew` | Fatigue index (negative = fresh, positive = fatigued) |
+| `tiredRateStateNew` | Fatigue state (1=very fresh → 5=overreaching) |
+| `trainingLoadRatio` | Load ratio vs chronic load (optimal ~0.8–1.5) |
+| `lthr` | Lactate threshold HR — present after a fitness test |
+| `ltsp` | Lactate threshold pace (s/km) — present after a fitness test |
+
+> **Note on `tib`:** Negative values appear for some days due to timezone handling in the COROS backend. Ignore negative `tib` values (use `d.tib > 0` to filter).
+
+### HRV interpretation
+
+COROS stores 30-day HRV baseline in `sleepHrvBase`. Compare `avgSleepHrv` to it:
+- `avgSleepHrv >= sleepHrvBase` → recovered, ready for hard training
+- `avgSleepHrv >= sleepHrvBase * 0.9` → slightly suppressed, moderate training OK
+- `avgSleepHrv < sleepHrvBase * 0.9` → well below baseline, prioritise recovery
+
+The `sleepHrvIntervalList` is a 4-element array of HRV zone boundaries used by the COROS app UI.
 
 ```typescript
 import { CorosApi } from 'coros-connect';
@@ -94,12 +126,31 @@ const coros = new CorosApi();
 await coros.login();
 
 const evoLab = await coros.getEvoLabData();
-// evoLab.dayList    — daily metrics (84 days)
-// evoLab.weekList   — weekly summaries
+// evoLab.dayList       — daily health + training metrics (~84 days)
+// evoLab.weekList      — weekly load summaries
 // evoLab.sportStatistic — per-sport breakdown
+
+// Example: last 14 days of HRV
+const recentHrv = evoLab.dayList
+  .slice(-14)
+  .filter(d => d.avgSleepHrv && d.tib > 0)
+  .map(d => ({ date: d.happenDay, hrv: d.avgSleepHrv, baseline: d.sleepHrvBase, rhr: d.rhr }));
+
+console.log(recentHrv);
 ```
 
-See `src/CorosApi.ts` and `src/types/index.ts` for the full implementation.
+### What's NOT available via web API
+
+Despite being visible in the COROS mobile app, the following are **not exposed through the web API** (`teamapi.coros.com`):
+
+- SpO2 (blood oxygen) — mobile app only
+- Detailed sleep stages (deep/light/REM breakdown) — mobile app only
+- Step count / daily activity (calories, steps) — mobile app only
+- Continuous HR monitoring data — mobile app only
+
+These endpoints return HTTP 500 from the web gateway regardless of parameters. If you want this data, you'd need to proxy the COROS mobile app (see `revers-eng-api.md` for the approach).
+
+See `src/CorosApi.ts` and `src/types/index.ts` for the full typed implementation.
 
 ---
 

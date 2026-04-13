@@ -69,7 +69,10 @@ async function run() {
   }
 
   const profile = await coros.getAccount();
-  const activities = await coros.getActivitiesList({ size: 20, page: 1 });
+  const [activities, evoLab] = await Promise.all([
+    coros.getActivitiesList({ size: 20, page: 1 }),
+    coros.getEvoLabData().catch(() => null),
+  ]);
 
   const list = activities.dataList || [];
 
@@ -81,6 +84,13 @@ async function run() {
 
   // Training load sum last 7 days
   const weekLoad = week.reduce((sum, a) => sum + (a.trainingLoad || 0), 0);
+
+  // EvoLab health metrics — get the most recent day entries with data
+  const dayList = evoLab?.dayList || [];
+  const recentDays = dayList.slice(-14); // last 14 days of EvoLab data
+  const latestWithHrv = [...dayList].reverse().find(d => d.avgSleepHrv);
+  const latestWithVo2 = [...dayList].reverse().find(d => d.vo2max);
+  const latestWithStamina = [...dayList].reverse().find(d => d.staminaLevel);
 
   console.log('=== COROS COACHING REPORT ===');
   console.log(`Date: ${new Date().toISOString().split('T')[0]}`);
@@ -130,6 +140,40 @@ async function run() {
     }
   }
 
+  // Health metrics from EvoLab
+  if (latestWithHrv || latestWithVo2 || latestWithStamina) {
+    console.log(`\n--- HEALTH METRICS (EvoLab) ---`);
+    if (latestWithVo2) {
+      console.log(`  VO2max: ${latestWithVo2.vo2max} ml/kg/min (as of ${latestWithVo2.happenDay})`);
+    }
+    if (latestWithStamina) {
+      console.log(`  Aerobic Stamina: ${latestWithStamina.staminaLevel} | 7d target: ${latestWithStamina.staminaLevel7d}%`);
+    }
+    if (latestWithHrv) {
+      const hrv = latestWithHrv;
+      const status = hrv.avgSleepHrv >= hrv.sleepHrvBase
+        ? '✅ above baseline'
+        : hrv.avgSleepHrv >= hrv.sleepHrvBase * 0.9
+          ? '⚠️ slightly below baseline'
+          : '🔴 well below baseline';
+      console.log(`  Sleep HRV: ${hrv.avgSleepHrv}ms avg | baseline: ${hrv.sleepHrvBase}ms → ${status}`);
+    }
+
+    // HRV trend over last 7 days
+    const recentHrv = recentDays.filter(d => d.avgSleepHrv && d.tib > 0);
+    if (recentHrv.length >= 3) {
+      console.log(`  HRV trend (${recentHrv.length} nights): ` +
+        recentHrv.map(d => `${d.happenDay}: ${d.avgSleepHrv}ms`).join(' | '));
+    }
+
+    // RHR trend
+    const recentRhr = recentDays.filter(d => d.rhr > 0);
+    if (recentRhr.length) {
+      const avgRhr = Math.round(recentRhr.reduce((s, d) => s + d.rhr, 0) / recentRhr.length);
+      console.log(`  RHR avg (${recentRhr.length} days): ${avgRhr}bpm`);
+    }
+  }
+
   console.log(`\n--- ZONES ---`);
   const zones = profile.zoneData;
   if (zones) {
@@ -157,11 +201,25 @@ async function run() {
     console.log(`  ✅ Training load in healthy range (${weekLoad}).`);
   }
 
-  // VO2max proxy estimate from LT pace (Jack Daniels approximation)
-  const ltsp = zones?.ltsp;
-  if (ltsp) {
-    const speedMS = 1000 / ltsp;
-    console.log(`  📊 LT pace ${paceStr(ltsp)} → estimated VO2max ~${(speedMS * 3.5 * 60 / 1000 * 100).toFixed(0)} (use watch reading for accuracy)`);
+  // HRV-based readiness note
+  if (latestWithHrv) {
+    const hrv = latestWithHrv;
+    if (hrv.avgSleepHrv < hrv.sleepHrvBase * 0.9) {
+      console.log(`  🔴 HRV well below baseline (${hrv.avgSleepHrv} vs ${hrv.sleepHrvBase}ms) — consider easy/recovery session today.`);
+    } else if (hrv.avgSleepHrv >= hrv.sleepHrvBase) {
+      console.log(`  ✅ HRV above baseline — body is ready for quality training.`);
+    }
+  }
+
+  // VO2max from COROS (watch measurement) or LT pace estimate
+  if (latestWithVo2) {
+    console.log(`  📊 VO2max: ${latestWithVo2.vo2max} ml/kg/min (COROS estimate, last updated ${latestWithVo2.happenDay})`);
+  } else {
+    const ltsp = zones?.ltsp;
+    if (ltsp) {
+      const speedMS = 1000 / ltsp;
+      console.log(`  📊 LT pace ${paceStr(ltsp)} → estimated VO2max ~${(speedMS * 3.5 * 60 / 1000 * 100).toFixed(0)} (approximation — do a fitness test for accuracy)`);
+    }
   }
 
   return { profile, week, recentRuns, weekLoad };
