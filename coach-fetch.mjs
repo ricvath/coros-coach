@@ -57,28 +57,50 @@ async function api(path, token, opts = {}) {
   const { method = 'GET', params, body, extraHeaders = {} } = opts;
   let url = `${BASE}/${path}`;
   if (params) url += '?' + new URLSearchParams(params).toString();
-  const res = await fetch(url, {
-    method,
-    headers: {
-      accessToken: token,
-      'Content-Type': 'application/json',
-      ...extraHeaders,
-    },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: { accessToken: token, 'Content-Type': 'application/json', ...extraHeaders },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+  } catch (e) {
+    console.error('\n❌ Network error — are you connected to the internet?');
+    console.error('   Detail:', e.message);
+    process.exit(1);
+  }
+  if (res.status === 429) {
+    console.error('\n⚠️ COROS is rate limiting — too many requests. Try again in a few minutes.');
+    process.exit(1);
+  }
   return res.json();
 }
 
 async function login() {
   const pwd = createHash('md5').update(PASS).digest('hex');
-  const res = await fetch(`${BASE}/account/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ account: EMAIL, accountType: 2, pwd }),
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE}/account/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account: EMAIL, accountType: 2, pwd }),
+    });
+  } catch (e) {
+    console.error('\n❌ Network error — are you connected to the internet?');
+    console.error('   Detail:', e.message);
+    process.exit(1);
+  }
+  if (res.status === 429) {
+    console.error('\n⚠️ COROS is rate limiting — too many requests. Try again in a few minutes.');
+    process.exit(1);
+  }
   const j = await res.json();
-  if (j.result !== '0000') throw new Error('Login failed: ' + j.message);
-  return j.data; // { accessToken, userId, nickname, ... }
+  if (j.result !== '0000') {
+    console.error('\n❌ Login failed — check your email and password in coros.config.json');
+    console.error('   COROS said:', j.message);
+    process.exit(1);
+  }
+  return j.data;
 }
 
 async function run() {
@@ -87,12 +109,11 @@ async function run() {
 
   if (existsSync(TOKEN_FILE)) {
     token = readFileSync(TOKEN_FILE, 'utf8').trim();
-    // Verify token is still valid
     const check = await api('account/query', token);
     if (check.result === '0000') {
       profile = check.data;
     } else {
-      // Token expired — re-login
+      // Token expired (e.g. you logged into the COROS app/website) — re-login silently
       profile = await login();
       token = profile.accessToken;
       mkdirSync(TOKEN_DIR, { recursive: true });
@@ -105,17 +126,33 @@ async function run() {
     writeFileSync(TOKEN_FILE, token);
   }
 
+  if (!profile || !profile.userId) {
+    console.error('\n❌ Could not load your COROS profile. Try deleting .coros-token/ and running again.');
+    process.exit(1);
+  }
+
   const userId = profile.userId;
 
   // Fetch activities and EvoLab in parallel
-  const [activitiesRes, evoLabRes] = await Promise.all([
-    api('activity/query', token, { params: { size: 20, pageNumber: 1 } }),
-    fetch(`${BASE}/analyse/query`, {
-      headers: { accesstoken: token, yfheader: JSON.stringify({ userId }) },
-    }).then(r => r.json()).catch(() => null),
-  ]);
+  let activitiesRes, evoLabRes;
+  try {
+    [activitiesRes, evoLabRes] = await Promise.all([
+      api('activity/query', token, { params: { size: 20, pageNumber: 1 } }),
+      fetch(`${BASE}/analyse/query`, {
+        headers: { accesstoken: token, yfheader: JSON.stringify({ userId }) },
+      }).then(r => r.json()).catch(() => null),
+    ]);
+  } catch (e) {
+    console.error('\n❌ Failed to fetch training data from COROS.');
+    console.error('   Detail:', e.message);
+    process.exit(1);
+  }
 
-  const list = activitiesRes.data?.dataList || [];
+  const list = activitiesRes?.data?.dataList || [];
+
+  if (list.length === 0) {
+    console.log('⚠️ No activities found. Make sure your COROS watch has synced recently.');
+  }
   const evoLab = evoLabRes?.data ?? null;
 
   // Categorize last 7 days
