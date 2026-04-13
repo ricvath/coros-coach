@@ -5,9 +5,13 @@
 node_modules
 dist
 
-# credentials
+# credentials — never commit real credentials
 coros.config.json
+.coros-token/
 
 # local artifacts
 *.txt
 *.zip
+
+# planning / session notes (local only)
+.planning/
