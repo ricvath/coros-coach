@@ -2,6 +2,9 @@
 
 A Node.js toolkit for pulling your COROS training data and using it with an AI agent — for coaching summaries, training load analysis, lap/split breakdowns, and proactive nudges.
 
+<img width="485" height="501" alt="Screenshot 2026-04-13 at 4 10 46 PM" src="https://github.com/user-attachments/assets/ea9c747e-7837-4f2d-a6b6-c9fc9362151b" />
+
+
 <img width="1153" height="625" alt="Screenshot 2026-04-13 at 4 09 12 PM" src="https://github.com/user-attachments/assets/1b93dc5c-a15f-4f3a-af7c-09c2aaf268c5" />
 
 
