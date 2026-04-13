@@ -1,4 +1,4 @@
-# coros-api-mcp
+# Coros Coach
 
 A Node.js toolkit for pulling your COROS training data and using it with an AI agent — for coaching summaries, training load analysis, lap/split breakdowns, and proactive nudges.
 
